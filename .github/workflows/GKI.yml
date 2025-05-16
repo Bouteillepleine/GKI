@@ -1,4 +1,4 @@
-name: GKI Build SuKiSu SUSFS
+name: GKI Build
 on:
   workflow_dispatch:
     inputs:
