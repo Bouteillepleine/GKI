@@ -1,4 +1,5 @@
 name: GKI Build
+
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +11,7 @@ on:
         description: "Kernel Version"
         required: true
         default: '6.1'
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,6 +19,7 @@ jobs:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
+
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -32,77 +35,75 @@ jobs:
         run: |
           git config --global user.name "build"
           git config --global user.email "3028172686@qq.com"
+
       - name: Install dependencies
         run: |
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y python3 git curl ccache
+
       - name: Install repo tool
         run: |
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
+
       - name: Initialize repo and sync
         run: |
-          set -e
           mkdir kernel_workspace && cd kernel_workspace
           repo init -u https://github.com/Bouteillepleine/kernel_patches.git -m docker/manifest.xml --depth=1
           repo --trace sync -c -j$(nproc --all) --no-tags
           rm common/android/abi_gki_protected_exports_* || echo "No protected exports!"
+
       - name: Debug Directory Structure
-        run: |
-          cd kernel_workspace
-          find . -maxdepth 3
+        working-directory: kernel_workspace
+        run: find . -maxdepth 3
+
       - name: Clone SUSFS patches
+        working-directory: kernel_workspace
         run: |
-          cd kernel_workspace
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
           git clone https://github.com/TheWildJames/kernel_patches.git
-          
+
       - name: Set CONFIG Environment Variable
         run: echo "CONFIG=$(pwd)/kernel_workspace" >> $GITHUB_ENV
 
       - name: Add KernelSU
+        working-directory: ${{ env.CONFIG }}
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          echo "Adding KernelSU..."
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
           cd KernelSU-Next
           git submodule update --init --recursive
           KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" 10200)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=11998/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
+
       - name: Apply SUSFS Patches
+        working-directory: ${{ env.CONFIG }}
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          echo "Applying SUSFS patches..."
           cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch ./common/
           cp susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
           cd ./KernelSU-Next
-          echo "Applying next SUSFS patches..."
           cp ../kernel_patches/next/kernel-patch-susfs-v1.5.7-to-KernelSU-Next.patch ./
-          patch -p1 --forward < kernel-patch-susfs-v1.5.7-to-KernelSU-Next.patch || echo "Warning: SUSFS next patch failed"
+          patch -p1 --forward < kernel-patch-susfs-v1.5.7-to-KernelSU-Next.patch || exit 1
           cd ../common
-          patch -p1 < 50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch || echo "Warning: SUSFS GKI patch failed"
+          patch -p1 < 50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch || exit 1
+
       - name: Apply KSU Hooks
+        working-directory: ${{ env.CONFIG }}/common
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG/common"
           cp ../kernel_patches/next/syscall_hooks.patch ./
-          patch -p1 --fuzz=3 < ./syscall_hooks.patch || echo "Warning: Syscall hooks patch failed"
+          patch -p1 --fuzz=3 < ./syscall_hooks.patch || exit 1
+
       - name: Apply Hide Stuff Patches
+        working-directory: ${{ env.CONFIG }}/common
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG/common"
           cp ../kernel_patches/69_hide_stuff.patch ./
-          patch -p1 -F 3 < 69_hide_stuff.patch || echo "Warning: Hide stuff patch failed"
+          patch -p1 -F 3 < 69_hide_stuff.patch || exit 1
+
       - name: Add SUSFS Configuration Settings
+        working-directory: ${{ env.CONFIG }}
         run: |
-          echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG"
-          echo "Adding configuration settings to gki_defconfig..."
           cp ./common/arch/arm64/configs/gki_defconfig ./common/arch/arm64/configs/gki_defconfig.bak
           for config in CONFIG_KSU CONFIG_KSU_WITH_KPROBES CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_SUS_OVERLAYFS CONFIG_KSU_SUSFS_TRY_UMOUNT CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_ENABLE_LOG CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SUS_SU CONFIG_TMPFS_XATTR CONFIG_TMPFS_POSIX_ACL CONFIG_WIREGUARD CONFIG_IP_NF_NAT CONFIG_IP_NF_TARGET_TTL CONFIG_IP6_NF_TARGET_HL CONFIG_IP6_NF_MATCH_HL CONFIG_DEBUG_KERNEL CONFIG_DYNAMIC_DEBUG CONFIG_DEBUG_INFO CONFIG_TCP_CONG_ADVANCED CONFIG_TCP_CONG_BBR CONFIG_DEFAULT_TCP_CONG CONFIG_TCP_CONG_CDG CONFIG_DEFAULT_BBR CONFIG_DEFAULT_CUBIC CONFIG_DEFAULT_CDG CONFIG_NET_SCH_DEFAULT CONFIG_DEFAULT_FQ CONFIG_DEFAULT_NET_SCH CONFIG_NET_SCH_HTB CONFIG_NET_SCH_PRIO CONFIG_NET_SCH_SFQ CONFIG_NET_SCH_TBF CONFIG_TCP_CONG_BIC CONFIG_TCP_CONG_WESTWOOD CONFIG_TCP_CONG_HTCP CONFIG_IP_NF_TARGET_ECN CONFIG_IP_ECN CONFIG_TCP_ECN CONFIG_IPV6_ECN; do
             if ! grep -q "^${config}=" ./common/arch/arm64/configs/gki_defconfig; then
@@ -125,15 +126,18 @@ jobs:
           sed -i 's/check_defconfig//' ./common/build.config.gki
           cd common
           git add -A && git commit -a -m "BUILD Kernel"
+
       - name: Build kernel
+        working-directory: kernel_workspace
         run: |
-          cd kernel_workspace
+          set -e
           if [ -e build/build.sh ]; then
             LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang"
           else
             tools/bazel run --config=fast --config=stamp --lto=thin //common:kernel_aarch64_dist -- --dist_dir=dist
           fi
-          find kernel_workspace -name Image
+          find . -name Image
+
       - name: Make AnyKernel3
         run: |
           OUTDIR=kernel_workspace/out/${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}/dist
@@ -144,19 +148,4 @@ jobs:
             echo "Error: Kernel Image not found in $OUTDIR"
             find kernel_workspace -name Image
             exit 1
-          fi
-          mkdir output
-          git clone https://github.com/WildPlusKernel/AnyKernel3.git --depth=1 output/AnyKernel3
-          rm -rf output/AnyKernel3/.git
-          cp "$OUTDIR/Image" output/AnyKernel3/
-      - name: Upload AnyKernel3
-        uses: actions/upload-artifact@v4
-        with:
-          name: KSU_${{ env.KSUVER }}_${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
-          path: output/AnyKernel3/*
-
-      - name: Upload Image
-        uses: actions/upload-artifact@v4
-        with:
-          name: Image
-          path: output/*
+         
