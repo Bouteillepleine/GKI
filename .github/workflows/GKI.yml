@@ -43,6 +43,7 @@ jobs:
           sudo mv ~/repo /usr/local/bin/repo
       - name: Initialize repo and sync
         run: |
+          set -e
           mkdir kernel_workspace && cd kernel_workspace
           repo init -u https://github.com/Bouteillepleine/kernel_patches.git -m docker/manifest.xml --depth=1
           repo --trace sync -c -j$(nproc --all) --no-tags
@@ -128,9 +129,9 @@ jobs:
         run: |
           cd kernel_workspace
           if [ -e build/build.sh ]; then
-            LTO=full BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang"
+            LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh CC="/usr/bin/ccache clang"
           else
-            tools/bazel run --config=fast --config=stamp --lto=full //common:kernel_aarch64_dist -- --dist_dir=dist
+            tools/bazel run --config=fast --config=stamp --lto=thin //common:kernel_aarch64_dist -- --dist_dir=dist
           fi
           find kernel_workspace -name Image
       - name: Make AnyKernel3
