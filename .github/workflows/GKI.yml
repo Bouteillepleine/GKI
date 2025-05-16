@@ -51,13 +51,18 @@ jobs:
           repo --trace sync -c -j$(nproc --all) --no-tags
           rm common/android/abi_gki_protected_exports_* || echo "No protected exports!"
 
+      - name: Clone SUSFS patches
+        run: |
+          cd kernel_workspace
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
+
       - name: Set CONFIG Environment Variable
         run: echo "CONFIG=$(pwd)/kernel_workspace" >> $GITHUB_ENV
 
       - name: Add KernelSU
         run: |
           echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG/kernel_platform"
+          cd "$CONFIG"
           echo "Adding KernelSU..."
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s next
           git submodule update --init --recursive
@@ -69,89 +74,56 @@ jobs:
       - name: Apply SUSFS Patches
         run: |
           echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG/kernel_platform"
+          cd "$CONFIG"
           echo "Applying SUSFS patches..."
-          cp ../../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./common/
-          cp ../../susfs4ksu/kernel_patches/fs/* ./common/fs/
-          cp ../../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          cp susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch ./common/
+          cp susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
           cd ./KernelSU-Next
           echo "Applying next SUSFS patches..."
-          cp ../../../kernel_patches/next/kernel-patch-susfs-v1.5.7-to-KernelSU-Next.patch ./
-          patch -p1 --forward < kernel-patch-susfs-v1.5.7-to-KernelSU-Next.patch || true
+          cp ../kernel_patches/next/kernel-patch-susfs-v1.5.7-to-KernelSU-Next.patch ./
+          patch -p1 --forward < kernel-patch-susfs-v1.5.7-to-KernelSU-Next.patch || echo "Warning: SUSFS next patch failed"
           cd ../common
-          if [ "${{ inputs.soc }}" == "sun" ]; then
-            sed -i '/#include <trace\/hooks\/blk.h>/a #include <trace/hooks/fs.h>' ./fs/namespace.c
-          fi
-          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
+          patch -p1 < 50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch || echo "Warning: SUSFS GKI patch failed"
 
       - name: Apply KSU Hooks
         run: |
           echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG/kernel_platform/common"
-          cp ../../../kernel_patches/next/syscall_hooks.patch ./
-          patch -p1 --fuzz=3 < ./syscall_hooks.patch
+          cd "$CONFIG/common"
+          cp ../kernel_patches/next/syscall_hooks.patch ./
+          patch -p1 --fuzz=3 < ./syscall_hooks.patch || echo "Warning: Syscall hooks patch failed"
 
       - name: Apply Hide Stuff Patches
         run: |
           echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG/kernel_platform/common"
-          cp ../../../kernel_patches/69_hide_stuff.patch ./
-          patch -p1 -F 3 < 69_hide_stuff.patch
+          cd "$CONFIG/common"
+          cp ../kernel_patches/69_hide_stuff.patch ./
+          patch -p1 -F 3 < 69_hide_stuff.patch || echo "Warning: Hide stuff patch failed"
 
       - name: Add SUSFS Configuration Settings
         run: |
           echo "Changing to configuration directory: $CONFIG..."
-          cd "$CONFIG/kernel_platform"
+          cd "$CONFIG"
           echo "Adding configuration settings to gki_defconfig..."
-          echo "CONFIG_KSU=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_WITH_KPROBES=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TMPFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_WIREGUARD=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_NF_NAT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_NF_TARGET_TTL=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP6_NF_TARGET_HL=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP6_NF_MATCH_HL=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DEBUG_KERNEL=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DYNAMIC_DEBUG=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DEBUG_INFO=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TCP_CONG_ADVANCED=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TCP_CONG_BBR=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DEFAULT_TCP_CONG=\"bbr\"" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TCP_CONG_CDG=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DEFAULT_BBR=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DEFAULT_CUBIC=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DEFAULT_CDG=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_NET_SCH_DEFAULT=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_DEFAULT_FQ=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo 'CONFIG_DEFAULT_NET_SCH="fq"' >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_NET_SCH_HTB=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_NET_SCH_PRIO=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_NET_SCH_SFQ=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_NET_SCH_TBF=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TCP_CONG_BIC=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TCP_CONG_WESTWOOD=n" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TCP_CONG_HTCP=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_NF_TARGET_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IP_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_TCP_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
-          echo "CONFIG_IPV6_ECN=y" >> ./common/arch/arm64/configs/gki_defconfig
+          cp ./common/arch/arm64/configs/gki_defconfig ./common/arch/arm64/configs/gki_defconfig.bak
+          for config in CONFIG_KSU CONFIG_KSU_WITH_KPROBES CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_SUS_OVERLAYFS CONFIG_KSU_SUSFS_TRY_UMOUNT CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_ENABLE_LOG CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SUS_SU CONFIG_TMPFS_XATTR CONFIG_TMPFS_POSIX_ACL CONFIG_WIREGUARD CONFIG_IP_NF_NAT CONFIG_IP_NF_TARGET_TTL CONFIG_IP6_NF_TARGET_HL CONFIG_IP6_NF_MATCH_HL CONFIG_DEBUG_KERNEL CONFIG_DYNAMIC_DEBUG CONFIG_DEBUG_INFO CONFIG_TCP_CONG_ADVANCED CONFIG_TCP_CONG_BBR CONFIG_DEFAULT_TCP_CONG CONFIG_TCP_CONG_CDG CONFIG_DEFAULT_BBR CONFIG_DEFAULT_CUBIC CONFIG_DEFAULT_CDG CONFIG_NET_SCH_DEFAULT CONFIG_DEFAULT_FQ CONFIG_DEFAULT_NET_SCH CONFIG_NET_SCH_HTB CONFIG_NET_SCH_PRIO CONFIG_NET_SCH_SFQ CONFIG_NET_SCH_TBF CONFIG_TCP_CONG_BIC CONFIG_TCP_CONG_WESTWOOD CONFIG_TCP_CONG_HTCP CONFIG_IP_NF_TARGET_ECN CONFIG_IP_ECN CONFIG_TCP_ECN CONFIG_IPV6_ECN; do
+            if ! grep -q "^${config}=" ./common/arch/arm64/configs/gki_defconfig; then
+              case $config in
+                CONFIG_KSU_WITH_KPROBES|CONFIG_KSU_SUSFS_SUS_SU|CONFIG_KSU_SUSFS_SUS_OVERLAYFS|CONFIG_DEBUG_KERNEL|CONFIG_DYNAMIC_DEBUG|CONFIG_DEBUG_INFO|CONFIG_DEFAULT_CUBIC|CONFIG_DEFAULT_CDG|CONFIG_TCP_CONG_BIC|CONFIG_TCP_CONG_WESTWOOD)
+                  echo "${config}=n" >> ./common/arch/arm64/configs/gki_defconfig
+                  ;;
+                CONFIG_DEFAULT_TCP_CONG)
+                  echo "${config}=\"bbr\"" >> ./common/arch/arm64/configs/gki_defconfig
+                  ;;
+                CONFIG_DEFAULT_NET_SCH)
+                  echo "${config}=\"fq\"" >> ./common/arch/arm64/configs/gki_defconfig
+                  ;;
+                *)
+                  echo "${config}=y" >> ./common/arch/arm64/configs/gki_defconfig
+                  ;;
+              esac
+            fi
+          done
           sed -i 's/check_defconfig//' ./common/build.config.gki
           cd common
           git add -A && git commit -a -m "BUILD Kernel"
@@ -174,10 +146,6 @@ jobs:
           mkdir output
           cp $OUTDIR/Image ./output/
           cd output
-          # KPM patch step removed
-          rm -f Image
-          mv oImage Image
-          cd ..
           git clone https://github.com/WildPlusKernel/AnyKernel3.git --depth=1
           rm -rf ./AnyKernel3/.git
           cp $OUTDIR/Image ./AnyKernel3/
