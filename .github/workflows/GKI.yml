@@ -53,6 +53,11 @@ jobs:
           repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b oneplus/sm8650 -m oneplus_13r.xml --repo-rev=v2.16 --depth=1
           repo --trace sync -c -j$(nproc --all) --no-tags
           rm common/android/abi_gki_protected_exports_* || echo "No protected exports!"
+          # Ensure drivers/ directory exists
+          if [ ! -d "drivers" ]; then
+            echo "Creating missing drivers/ directory"
+            mkdir drivers
+          fi
 
       - name: Debug Directory Structure
         working-directory: kernel_workspace
