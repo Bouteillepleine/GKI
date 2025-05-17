@@ -1,4 +1,3 @@
-
 name: GKI Build
 
 on:
@@ -137,29 +136,43 @@ jobs:
           else
             tools/bazel run --config=fast --config=stamp --lto=thin //common:kernel_aarch64_dist -- --dist_dir=dist
           fi
+          echo "Listing dist directory after build:"
+          ls -l dist/
           find . -name Image
 
       - name: Make AnyKernel3
         run: |
           set -e
-          OUTDIR=kernel_workspace/out/${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}/dist
-          if [ ! -f "$OUTDIR/Image" ]; then
-            OUTDIR=dist
+          CONFIG=/home/runner/work/GKI/GKI/kernel_workspace
+          OUTDIR="$CONFIG/out/${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}/dist"
+          if [ ! -e "$OUTDIR" ]; then
+              OUTDIR="$CONFIG/dist"
           fi
-          if [ ! -f "$OUTDIR/Image" ]; then
-            echo "Error: Kernel Image not found in $OUTDIR"
-            find . -name Image
-            exit 1
+          IMAGE_FILE=$(find "$OUTDIR" -maxdepth 1 -iname "Image" | head -n 1)
+          if [ -z "$IMAGE_FILE" ]; then
+              echo "Error: Kernel Image not found in $OUTDIR"
+              echo "Current directory: $(pwd)"
+              echo "Listing dist directory:"
+              ls -l "$OUTDIR"
+              echo "Searching for Image files:"
+              find "$CONFIG" -name Image
+              exit 1
           fi
-          echo "Found kernel Image at: $OUTDIR/Image"
-          cd kernel_workspace
-          git clone --depth=1 https://github.com/WildPlusKernel/AnyKernel3.git
-          cp "../$OUTDIR/Image" AnyKernel3/
-          cd AnyKernel3
+          echo "Found kernel Image at: $IMAGE_FILE"
+          ls -l "$IMAGE_FILE"
+          cd "$CONFIG"
+          for i in {1..3}; do git clone --depth=1 https://github.com/WildPlusKernel/AnyKernel3.git && break || sleep 5; done
+          if [ ! -d "$CONFIG/AnyKernel3" ]; then
+              echo "Error: Failed to clone AnyKernel3 repository"
+              exit 1
+          fi
+          cp "$IMAGE_FILE" "$CONFIG/AnyKernel3/"
+          cd "$CONFIG/AnyKernel3"
           zip -r9 "GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.zip" ./*
+          echo "Created zip file: $CONFIG/AnyKernel3/GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.zip"
 
       - name: Upload Flashable Zip
         uses: actions/upload-artifact@v4
         with:
           name: GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
-          path: kernel_workspace/AnyKernel3/*.zip
+          path: kernel_workspace/AnyKernel3/GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.zip
