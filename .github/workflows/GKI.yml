@@ -142,28 +142,23 @@ jobs:
         run: |
           set -e
           OUTDIR=kernel_workspace/out/${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}/dist
-          if [ ! -d "$OUTDIR" ]; then
+          if [ ! -e "$OUTDIR" ]; then
             OUTDIR=kernel_workspace/dist
           fi
-          if [ ! -d "kernel_workspace" ]; then
-            echo "Error: kernel_workspace directory not found in $(pwd)"
+          if [ ! -f "$OUTDIR/Image" ]; then
+            echo "Error: Kernel Image not found in $OUTDIR"
+            find kernel_workspace -name Image
             exit 1
           fi
+          echo "Found kernel Image at: $OUTDIR/Image"
           cd kernel_workspace
-          IMAGE_PATH=$(find . -type f -name "Image" | head -n 1)
-          if [ -z "$IMAGE_PATH" ]; then
-            echo "Error: Kernel Image not found in $OUTDIR or subdirectories"
-            ls -R "$OUTDIR" || echo "No files in $OUTDIR"
-            exit 1
-          fi
-          echo "Found kernel Image at: $IMAGE_PATH"
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
-          cp "$IMAGE_PATH" AnyKernel3/
+          git clone --depth=1 https://github.com/WildPlusKernel/AnyKernel3.git
+          cp "$OUTDIR/Image" AnyKernel3/
           cd AnyKernel3
           zip -r9 "GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.zip" ./*
 
-      - name: Upload Flashable Zip
+      - name: Upload AnyKernel3
         uses: actions/upload-artifact@v4
         with:
           name: GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
-          path: kernel_workspace/AnyKernel3/*.zip
+          path: ./AnyKernel3/*
