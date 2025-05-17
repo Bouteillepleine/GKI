@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update && sudo apt upgrade -y
-          sudo apt install -y python3 git curl ccache
+          sudo apt install - -y python3 git curl ccache
 
       - name: Install repo tool
         run: |
@@ -137,15 +137,33 @@ jobs:
             tools/bazel run --config=fast --config=stamp --lto=thin //common:kernel_aarch64_dist -- --dist_dir=dist
           fi
           find . -name Image
-         
+
       - name: Make AnyKernel3
         run: |
+          set -e
           OUTDIR=kernel_workspace/out/${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}/dist
-          if [ ! -e $OUTDIR ]; then
+          if [ ! -d "$OUTDIR" ]; then
             OUTDIR=kernel_workspace/dist
           fi
-          if [ ! -f "$OUTDIR/Image" ]; then
-            echo "Error: Kernel Image not found in $OUTDIR"
-            find kernel_workspace -name Image
+          if [ ! -d "kernel_workspace" ]; then
+            echo "Error: kernel_workspace directory not found in $(pwd)"
             exit 1
-         
+          fi
+          cd kernel_workspace
+          IMAGE_PATH=$(find . -type f -name "Image" | head -n 1)
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "Error: Kernel Image not found in $OUTDIR or subdirectories"
+            ls -R "$OUTDIR" || echo "No files in $OUTDIR"
+            exit 1
+          fi
+          echo "Found kernel Image at: $IMAGE_PATH"
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          cp "$IMAGE_PATH" AnyKernel3/
+          cd AnyKernel3
+          zip -r9 "GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.zip" ./*
+
+      - name: Upload Flashable Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
+          path: kernel_workspace/AnyKernel3/*.zip
