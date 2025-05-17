@@ -143,18 +143,18 @@ jobs:
         run: |
           set -e
           OUTDIR=kernel_workspace/out/${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}/dist
-          if [ ! -e "$OUTDIR" ]; then
-            OUTDIR=kernel_workspace/dist
+          if [ ! -f "$OUTDIR/Image" ]; then
+            OUTDIR=dist
           fi
           if [ ! -f "$OUTDIR/Image" ]; then
             echo "Error: Kernel Image not found in $OUTDIR"
-            find kernel_workspace -name Image
+            find . -name Image
             exit 1
           fi
           echo "Found kernel Image at: $OUTDIR/Image"
           cd kernel_workspace
           git clone --depth=1 https://github.com/WildPlusKernel/AnyKernel3.git
-          cp "$OUTDIR/Image" AnyKernel3/
+          cp "../$OUTDIR/Image" AnyKernel3/
           cd AnyKernel3
           zip -r9 "GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.zip" ./*
 
