@@ -1,3 +1,4 @@
+
 name: GKI Build
 
 on:
@@ -39,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update && sudo apt upgrade -y
-          sudo apt install - -y python3 git curl ccache
+          sudo apt install -y python3 git curl ccache
 
       - name: Install repo tool
         run: |
@@ -157,8 +158,8 @@ jobs:
           cd AnyKernel3
           zip -r9 "GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.zip" ./*
 
-      - name: Upload AnyKernel3
+      - name: Upload Flashable Zip
         uses: actions/upload-artifact@v4
         with:
           name: GKI-Kernel-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
-          path: ./AnyKernel3/*
+          path: kernel_workspace/AnyKernel3/*.zip
